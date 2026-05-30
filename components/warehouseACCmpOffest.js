@@ -596,26 +596,34 @@ class warehouseACCmpOffest extends BaseComponent {
     if (isNaN(price) || price <= 0) return 0;
     
     let step;
-    if (price < 1) {
-      step = 0.001;
-    } else if (price >= 1 && price < 2) {
-      step = 0.01;
-    } else if (price >= 2 && price < 5) {
-      step = 0.05;
-    } else if (price >= 5 && price < 20) {
-      step = 0.1;
-    } else if (price >= 20 && price < 50) {
-      step = 0.25;
-    } else if (price >= 50 && price < 100) {
-      step = 0.5;
-    } else if (price >= 100 && price < 200) {
-      step = 1;
-    } else if (price >= 200 && price < 500) {
-      step = 2;
+    if (price >= 20000) {
+      step = 500;
+    } else if (price >= 10000 && price < 20000) {
+      step = 100;
+    } else if (price >= 5000 && price < 10000) {
+      step = 25;
+    } else if (price >= 1000 && price < 5000) {
+      step = 10;
     } else if (price >= 500 && price < 1000) {
       step = 5;
+    } else if (price >= 200 && price < 500) {
+      step = 2;
+    } else if (price >= 100 && price < 200) {
+      step = 1;
+    } else if (price >= 50 && price < 100) {
+      step = 0.5;
+    } else if (price >= 20 && price < 50) {
+      step = 0.25;
+    } else if (price >= 5 && price < 20) {
+      step = 0.1;
+    } else if (price >= 2 && price < 5) {
+      step = 0.05;
+    } else if (price >= 1 && price < 2) {
+      step = 0.01;
+    } else if (price >= 0.5 && price < 1) {
+      step = 0.005;
     } else {
-      step = 10;
+      step = 0.001;
     }
     
     // 计算需要保留的小数位数
