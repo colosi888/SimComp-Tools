@@ -2,22 +2,13 @@
  - 原脚本 https://github.com/AS629/SimComp-Tools
  - 更新api接口
 
-# 使用方法 [选其一即可]
+# 使用方法 
 - 从Github最新Release下载build.user.js导入油猴插件
-- 从我建好的分发服务器下载更新
-  - 大陆用户：http://103.40.13.68:45154/file/download
-  - 海外用户：http://rack1.raincs.cc:45154/file/download
 - 从代码构建 
   - 下载代码
   - `yarn`
   - `yarn run build`
   - 导入油猴插件
-
-# 自带插件的游戏客户端
-https://github.com/ShenHaiSu/SimComp-Tools/releases/tag/2.11.231208085516-app
-- WindowsPC 基于Electron (可以使用原生Notification通知对象拉起系统级通知)
-- Android 基于系统WebView (可以通过安卓通知通道拉起通知)
-- IOS与MacOS客户端开发 无计划
 
 # 肚子饿饿
 - https://afdian.net/a/SCT-Editor
