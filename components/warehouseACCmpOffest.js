@@ -21,6 +21,10 @@ class warehouseACCmpOffest extends BaseComponent {
     marketPrice: 0, // 保存市场价格
     priceInput: undefined, // 保存价格输入框引用
     infoDisplay: undefined, // 保存信息显示节点引用
+    transUnitCount: 0, // 运输单位数量
+    taxFee: 0, // 税费
+    itemName: "", // 物品名称
+    itemQuality: 0, // 物品品质
   }
   commonFuncList = [{
     match: () => Boolean(location.href.match(/warehouse\/(.+)/) && document.querySelectorAll("form").length > 0),
@@ -167,6 +171,21 @@ class warehouseACCmpOffest extends BaseComponent {
       let quality = this.getQuality(formNode);
       tools.log(`warehouseACCmpOffest: 品质: ${quality}`);
       
+      // 获取物品名称
+      let itemName = "";
+      try {
+        if (formNode.previousElementSibling) {
+          let bElement = formNode.previousElementSibling.querySelector("b");
+          if (bElement) {
+            itemName = bElement.innerText;
+          }
+        }
+      } catch (e) {
+        tools.log("warehouseACCmpOffest: 获取物品名称失败", e);
+      }
+      this.componentData.itemName = itemName;
+      this.componentData.itemQuality = quality;
+      
       let market_price = await tools.getMarketPrice(res_id, quality, realm);
       tools.log(`warehouseACCmpOffest: 市场价格: ${market_price}`);
 
@@ -210,6 +229,19 @@ class warehouseACCmpOffest extends BaseComponent {
       
       // 添加价格输入框监听
       priceInput.addEventListener("input", e => this.handlePriceChange(e));
+      
+      // 添加数量输入框监听，因为运输单位和税费会随数量变化
+      try {
+        let inputList = formNode.querySelectorAll("input");
+        if (inputList && inputList.length >= 1) {
+          let quantityInput = inputList[0];
+          if (quantityInput) {
+            quantityInput.addEventListener("input", e => this.handleQuantityChange(e));
+          }
+        }
+      } catch (e) {
+        tools.log("warehouseACCmpOffest: 添加数量监听失败", e);
+      }
       
     } catch (error) {
       tools.log("warehouseACCmpOffest: ❌ 发生错误");
@@ -337,26 +369,72 @@ class warehouseACCmpOffest extends BaseComponent {
   // 更新信息显示
   updateInfoDisplay(currentPrice) {
     try {
-      const { amount, cost, infoDisplay } = this.componentData;
+      const { amount, cost, infoDisplay, itemName, itemQuality } = this.componentData;
       
       if (!infoDisplay) {
         tools.log("warehouseACCmpOffest: 信息显示节点不存在，无法更新");
         return;
       }
       
-      // 计算预估收益 - 四舍五入
+      // 每次都重新获取运输单位和税费，避免数据过时
+      let transUnitCount = 0;
+      let taxFee = 0;
+      let formNode = document.querySelector("form");
+      if (formNode) {
+        try {
+          let rowDiv = formNode.querySelector("div.row");
+          if (rowDiv && rowDiv.nextElementSibling) {
+            let spanList = rowDiv.nextElementSibling.querySelectorAll("span");
+            if (spanList && spanList.length >= 2) {
+              transUnitCount = parseInt(spanList[0].innerText.replaceAll(/(x)|(,)/g, "")) || 0;
+              taxFee = parseInt(spanList[1].innerText.split("\n")[0].replaceAll(/(\$)|(,)/g, "")) || 0;
+            }
+          }
+        } catch (e) {
+          tools.log("warehouseACCmpOffest: 获取运输单位和税费失败", e);
+        }
+      }
+      
+      // 获取运输单位成本
+      const transUnitPrice = this.get_cost("运输单位", 0) || 0;
+      const transPay = transUnitCount * transUnitPrice;
+      
+      // 计算总收益和利润
       let estimatedRevenue = Math.round(amount * currentPrice * 100) / 100;
-      let estimatedProfit = Math.round((estimatedRevenue - cost) * 100) / 100;
+      let totalCost = cost + transPay + taxFee; // 总成本 = 成本 + 运输费用 + 税费
+      let estimatedProfit = Math.round((estimatedRevenue - totalCost) * 100) / 100;
+      let netRevenue = Math.round((estimatedRevenue - taxFee) * 100) / 100;
       let roundedCost = Math.round(cost * 100) / 100;
+      let roundedTransPay = Math.round(transPay * 100) / 100;
       
       infoDisplay.innerHTML = `
-        <div style="display: flex; justify-content: space-between; gap: 10px;">
-          <span title="库存数量">📦 ${amount.toLocaleString()}</span>
-          <span title="平均成本">💰 ${roundedCost.toLocaleString()}</span>
-          <span title="预估收入（不含税）">📈 ${estimatedRevenue.toLocaleString()}</span>
-          <span title="预估利润（不含税）" style="color: ${estimatedProfit >= 0 ? '#4CAF50' : '#f44336'}">利润（不含税）
-           ${estimatedProfit >= 0 ? '+' : ''}${estimatedProfit.toLocaleString()}
-          </span>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px 12px; align-items: center; text-align: center;">
+          <div title="库存数量" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 10px; opacity: 0.8;">数量</span>
+            <span style="font-weight: 500;">${amount.toLocaleString()}</span>
+          </div>
+          <div title="平均成本" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 10px; opacity: 0.8;">成本</span>
+            <span style="font-weight: 500;">${roundedCost.toLocaleString()}</span>
+          </div>
+          <div title="运输费用" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 10px; opacity: 0.8;">运费</span>
+            <span style="font-weight: 500;">${roundedTransPay.toLocaleString()}</span>
+          </div>
+          <div title="税费" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 10px; opacity: 0.8;">税费</span>
+            <span style="font-weight: 500;">${taxFee.toLocaleString()}</span>
+          </div>
+          <div title="预估收入（不含税）" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 10px; opacity: 0.8;">收入</span>
+            <span style="font-weight: 500;">${netRevenue.toLocaleString()}</span>
+          </div>
+          <div title="预估利润" style="display: flex; flex-direction: column; gap: 2px;">
+            <span style="font-size: 10px; opacity: 0.8;">利润</span>
+            <span style="font-weight: 500; color: ${estimatedProfit >= 0 ? '#4CAF50' : '#f44336'}">
+              ${estimatedProfit >= 0 ? '+' : ''}${estimatedProfit.toLocaleString()}
+            </span>
+          </div>
         </div>
       `;
     } catch (error) {
@@ -374,6 +452,29 @@ class warehouseACCmpOffest extends BaseComponent {
       }
     } catch (error) {
       tools.log("warehouseACCmpOffest: ❌ 处理价格变化时出错");
+      tools.errorLog(error);
+    }
+  }
+
+  // 处理数量输入框变化
+  handleQuantityChange(e) {
+    try {
+      // 获取当前价格并更新显示，updateInfoDisplay 会自己重新获取运输单位和税费
+      const priceInput = this.componentData.priceInput;
+      if (priceInput) {
+        const price = parseFloat(priceInput.value);
+        if (!isNaN(price) && price > 0) {
+          this.updateInfoDisplay(price);
+        } else {
+          // 如果没有有效价格，使用市场价格
+          const marketPrice = this.componentData.marketPrice;
+          if (marketPrice > 0) {
+            this.updateInfoDisplay(marketPrice);
+          }
+        }
+      }
+    } catch (error) {
+      tools.log("warehouseACCmpOffest: ❌ 处理数量变化时出错");
       tools.errorLog(error);
     }
   }
@@ -397,6 +498,44 @@ class warehouseACCmpOffest extends BaseComponent {
       tools.log("获取品质信息失败:", error);
       return 0;
     }
+  }
+
+  // 获取物品成本
+  get_cost(name, quality) {
+    let realm = runtimeData.basisCPT?.realm;
+    if (realm == undefined) return 0;
+    
+    let warehouseData = indexDBData.basisCPT?.warehouse?.[realm];
+    if (!warehouseData || !Array.isArray(warehouseData)) {
+      tools.log("warehouseACCmpOffest: 仓库数据未加载");
+      return 0;
+    }
+    
+    let result = 0;
+    warehouseData.forEach(item => {
+      if (!item) return;
+      
+      let itemName = "";
+      if (typeof item.kind === 'object' && item.kind.name) {
+        itemName = item.kind.name;
+      } else if (typeof item.kind === 'number') {
+        itemName = tools.itemIndex2Name(item.kind);
+      }
+      
+      if (itemName != name || item.quality != quality) return;
+      
+      let cost = 0;
+      if (typeof item.cost === 'object') {
+        cost = Object.values(item.cost).reduce((acc, cur) => acc + cur, 0);
+      } else if (typeof item.cost === 'number') {
+        cost = item.cost;
+      }
+      
+      result = (cost / item.amount).toFixed(10);
+    });
+    
+    tools.log(`warehouseACCmpOffest: 获取成本 - 名称:${name}, 品质:${quality}, 结果:${result}`);
+    return parseFloat(result);
   }
   // 构建选择器模板
   async buildSelectorNode() {
