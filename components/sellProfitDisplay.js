@@ -24,8 +24,13 @@ class sellProfitDisplay extends BaseComponent {
     // 利润 = 数量 * 单价 - (成本 * 单价 + 运输单位 * 运输单价 + 税费)
     try {
       let formNode = document.querySelector("form");
+      // 添加安全检查
+      if (!formNode) {
+        tools.log("sellProfitDisplay: 未找到表单节点");
+        return;
+      }
       let infoSpan;
-      if (formNode.lastChild.querySelector("span")) {
+      if (formNode.lastChild?.querySelector("span")) {
         infoSpan = formNode.lastChild.querySelector("span");
       } else {
         infoSpan = document.createElement("span");
@@ -71,12 +76,39 @@ class sellProfitDisplay extends BaseComponent {
   get_cost(name, quality) {
     let realm = runtimeData.basisCPT.realm;
     if (realm == undefined) return 0;
+    
+    let warehouseData = indexDBData.basisCPT.warehouse[realm];
+    if (!warehouseData || !Array.isArray(warehouseData)) {
+      tools.log("sellProfitDisplay: 仓库数据未加载");
+      return 0;
+    }
+    
     let result = 0;
-    indexDBData.basisCPT.warehouse[realm].forEach(item => {
-      if (item.kind.name != name || item.quality != quality) return;
-      let cost = Object.values(item.cost).reduce((acc, cur) => acc + cur, 0);
+    warehouseData.forEach(item => {
+      if (!item) return;
+      
+      // 处理 v3 API：kind 可能是数字或对象
+      let itemName = "";
+      if (typeof item.kind === 'object' && item.kind.name) {
+        itemName = item.kind.name;
+      } else if (typeof item.kind === 'number') {
+        // 如果 kind 是数字，尝试从工具函数获取名称
+        itemName = tools.itemIndex2Name(item.kind);
+      }
+      
+      if (itemName != name || item.quality != quality) return;
+      
+      let cost = 0;
+      if (typeof item.cost === 'object') {
+        cost = Object.values(item.cost).reduce((acc, cur) => acc + cur, 0);
+      } else if (typeof item.cost === 'number') {
+        cost = item.cost;
+      }
+      
       result = (cost / item.amount).toFixed(10);
     });
+    
+    tools.log(`sellProfitDisplay: 获取成本 - 名称:${name}, 品质:${quality}, 结果:${result}`);
     return parseFloat(result);
   }
 }
