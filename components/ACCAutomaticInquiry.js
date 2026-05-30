@@ -347,7 +347,7 @@ class ACCAutomaticInquiry extends BaseComponent {
           outputString = `Q:${tools.numberAddCommas(qualityItem.amount)}`;
           break;
         case 3: // 显示所有以及当前Q
-          outputString = `T:${tools.numberAddCommas(totalCount)}; Q:${tools.numberAddCommas(qualityItem.amount)}`;
+          outputString = `T:${tools.numberAddCommas(totalCount)}|Q:${tools.numberAddCommas(qualityItem.amount)}`;
           break;
         default:
           return "ERROR";
