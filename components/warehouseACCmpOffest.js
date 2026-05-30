@@ -189,20 +189,22 @@ class warehouseACCmpOffest extends BaseComponent {
       let market_price = await tools.getMarketPrice(res_id, quality, realm);
       tools.log(`warehouseACCmpOffest: 市场价格: ${market_price}`);
 
-      // 从仓库数据中获取数量和成本
+      // 从仓库数据中获取成本
       let warehouseData = await this.getWarehouseItemData(res_id, quality, realm);
-      let amount = warehouseData.amount || 0;
       let cost = warehouseData.cost || 0;
-      tools.log(`warehouseACCmpOffest: 数量: ${amount}, 成本: ${cost}`);
+      tools.log(`warehouseACCmpOffest: 成本: ${cost}`);
+
+      // 获取数量输入框的初始值
+      let inputList = formNode.querySelectorAll("input");
+      let quantityInput = inputList?.[0];
+      let initialAmount = quantityInput ? (parseInt(quantityInput.value) || 0) : 0;
 
       // 保存关键数据
-      this.componentData.amount = amount;
       this.componentData.cost = cost;
       this.componentData.marketPrice = market_price;
 
       // 重新渲染按钮
       selectorNode.setAttribute("mp", market_price);
-      selectorNode.setAttribute("amount", amount);
       selectorNode.setAttribute("cost", cost);
       
       // 生成按钮
@@ -223,8 +225,8 @@ class warehouseACCmpOffest extends BaseComponent {
       targetNode.appendChild(selectorNode);
       tools.log("warehouseACCmpOffest: ✅ 选择器已挂载");
       
-      // 挂载数量和成本显示
-      this.mountAmountCostDisplay(targetNode, amount, cost, market_price, res_name);
+      // 挂载数量和成本显示 - 传递初始数量
+      this.mountAmountCostDisplay(targetNode, initialAmount, cost, market_price, res_name);
       tools.log("warehouseACCmpOffest: ✅ 数量成本显示已挂载");
       
       // 添加价格输入框监听
@@ -252,7 +254,7 @@ class warehouseACCmpOffest extends BaseComponent {
     tools.log("========================================");
   }
   
-  // 从仓库数据中获取指定物品的数量和成本
+  // 从仓库数据中获取指定物品的成本
   async getWarehouseItemData(res_id, quality, realm) {
     try {
       let basisCPT = componentList["basisCPT"];
@@ -369,17 +371,31 @@ class warehouseACCmpOffest extends BaseComponent {
   // 更新信息显示
   updateInfoDisplay(currentPrice) {
     try {
-      const { amount, cost, infoDisplay, itemName, itemQuality } = this.componentData;
+      const { cost, infoDisplay, itemName, itemQuality } = this.componentData;
       
       if (!infoDisplay) {
         tools.log("warehouseACCmpOffest: 信息显示节点不存在，无法更新");
         return;
       }
       
+      // 每次都重新获取数量输入框的值
+      let amount = 0;
+      let formNode = document.querySelector("form");
+      if (formNode) {
+        try {
+          let inputList = formNode.querySelectorAll("input");
+          if (inputList && inputList.length >= 1) {
+            let quantityInput = inputList[0];
+            amount = parseInt(quantityInput.value) || 0;
+          }
+        } catch (e) {
+          tools.log("warehouseACCmpOffest: 获取数量输入框值失败", e);
+        }
+      }
+      
       // 每次都重新获取运输单位和税费，避免数据过时
       let transUnitCount = 0;
       let taxFee = 0;
-      let formNode = document.querySelector("form");
       if (formNode) {
         try {
           let rowDiv = formNode.querySelector("div.row");
@@ -409,7 +425,7 @@ class warehouseACCmpOffest extends BaseComponent {
       
       infoDisplay.innerHTML = `
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 8px 12px; align-items: center; text-align: center;">
-          <div title="库存数量" style="display: flex; flex-direction: column; gap: 2px;">
+          <div title="输入数量" style="display: flex; flex-direction: column; gap: 2px;">
             <span style="font-size: 10px; opacity: 0.8;">数量</span>
             <span style="font-weight: 500;">${amount.toLocaleString()}</span>
           </div>
