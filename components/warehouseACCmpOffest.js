@@ -463,7 +463,10 @@ class warehouseACCmpOffest extends BaseComponent {
       step = 10;
     }
     
-    return Math.round(price / step) * step;
+    // 计算需要保留的小数位数
+    const decimalPlaces = (step.toString().split('.')[1] || '').length;
+    // 使用更精确的四舍五入方式，避免浮点数误差
+    return Number((Math.round(price / step) * step).toFixed(decimalPlaces));
   }
   // 计算实际价格
   realPriceCalc(inputString, marketPrice) {
@@ -492,7 +495,18 @@ class warehouseACCmpOffest extends BaseComponent {
         result = 0;
         return;
     }
-    return Math.round(Number(result) * 1000) / 1000;
+    // 根据结果范围选择最合适的小数位数进行四舍五入
+    if (result < 1) {
+      return Number(result.toFixed(3));
+    } else if (result < 2) {
+      return Number(result.toFixed(2));
+    } else if (result < 5) {
+      return Number(result.toFixed(2));
+    } else if (result < 20) {
+      return Number(result.toFixed(1));
+    } else {
+      return Number(result.toFixed(2));
+    }
   }
 
 }
