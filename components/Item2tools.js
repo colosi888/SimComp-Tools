@@ -29,8 +29,17 @@ class item2tools extends BaseComponent {
       if (document.querySelector(`div[sct_cpt='item2tools']`)) return;
       // 检查标签缓存
       if (!this.componentData.tempNode) this.genTempNode();
-      // 挂载标签
-      let targetNode = tools.getParentByIndex(document.querySelector("div.row>div.col-md-6>div>div>a>table"), 2);
+      // 挂载标签 - 添加安全检查
+      let tableNode = document.querySelector("div.row>div.col-md-6>div>div>a>table");
+      if (!tableNode) {
+        tools.log("item2tools: 未找到仓库挂载节点");
+        return;
+      }
+      let targetNode = tools.getParentByIndex(tableNode, 2);
+      if (!targetNode) {
+        tools.log("item2tools: 父节点不存在");
+        return;
+      }
       targetNode.appendChild(this.componentData.tempNode);
     } catch (e) {
       tools.errorLog("item2tools报错", e);
