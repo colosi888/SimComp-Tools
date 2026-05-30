@@ -16,12 +16,17 @@ class warehouseACCmpOffest extends BaseComponent {
     onLoad: false, // 正在加载标记
     realm: undefined, // 当前服务器标记
     selectorNode: undefined, // 选择器缓存节点
+    amount: 0, // 保存数量
+    cost: 0, // 保存成本
+    marketPrice: 0, // 保存市场价格
+    priceInput: undefined, // 保存价格输入框引用
+    infoDisplay: undefined, // 保存信息显示节点引用
   }
   commonFuncList = [{
     match: () => Boolean(location.href.match(/warehouse\/(.+)/) && document.querySelectorAll("form").length > 0),
     func: this.mainFunc
   }]
-  cssText = [`select[sct_cpt='warehouseACCmpOffest'][sct_id='selectorNode']{width:100%;height:30px;background-color:#3c3c3c;border-radius:5px;margin-top:5px;color:var(--fontColor);}`];
+  cssText = [`div[sct_cpt='warehouseACCmpOffest'][sct_id='selectorNode']{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px;}button[sct_cpt='warehouseACCmpOffest']{flex:1;min-width:60px;height:30px;background-color:#3c3c3c;border-radius:5px;color:var(--fontColor);border:none;cursor:pointer;font-size:12px;}button[sct_cpt='warehouseACCmpOffest']:hover{background-color:#4a4a4a;}`];
 
   // 设置界面的构建
   settingUI = async () => {
@@ -74,7 +79,7 @@ class warehouseACCmpOffest extends BaseComponent {
     tools.alert("已提交更改");
     // 刷新显示
     this.componentData.selectorNode = undefined;
-    let mountNode = document.querySelector("select[sct_cpt='warehouseACCmpOffest'][sct_id='selectorNode']");
+    let mountNode = document.querySelector("div[sct_cpt='warehouseACCmpOffest'][sct_id='selectorNode']");
     if (mountNode) mountNode.remove();
   }
   async mainFunc() {
@@ -82,7 +87,7 @@ class warehouseACCmpOffest extends BaseComponent {
     tools.log("warehouseACCmpOffest: 开始执行主函数");
     
     // 检查网页标记是否已存在
-    if (document.querySelector("select[sct_cpt='warehouseACCmpOffest'][sct_id='selectorNode']")) {
+    if (document.querySelector("div[sct_cpt='warehouseACCmpOffest'][sct_id='selectorNode']")) {
       tools.log("warehouseACCmpOffest: 选择器已存在，跳过");
       tools.log("========================================");
       return;
@@ -97,12 +102,7 @@ class warehouseACCmpOffest extends BaseComponent {
     this.componentData.onLoad = true;
     
     try {
-      // 初始化数据以及节点预备
-      if (this.componentData.selectorNode == undefined) await this.buildSelectorNode();
-      let selectorNode = this.componentData.selectorNode;
-      tools.log("warehouseACCmpOffest: 选择器节点准备完成");
-      
-      // 获取价格输入框
+      // 获取价格输入框 - 先获取，这样可以快速失败
       let priceInput = document.querySelector("input[name='price']");
       tools.log(`warehouseACCmpOffest: 价格输入框:`, priceInput);
       
@@ -112,47 +112,94 @@ class warehouseACCmpOffest extends BaseComponent {
         tools.log("========================================");
         return;
       }
+      
+      // 保存输入框引用
+      this.componentData.priceInput = priceInput;
       let targetNode = priceInput.parentElement;
       tools.log(`warehouseACCmpOffest: 挂载目标节点:`, targetNode);
+      
+      // 初始化数据以及节点预备
+      if (this.componentData.selectorNode == undefined) await this.buildSelectorNode();
+      let selectorNode = this.componentData.selectorNode;
+      // 清空容器
+      selectorNode.innerHTML = '';
+      tools.log("warehouseACCmpOffest: 选择器节点准备完成");
       
       let realm = (this.componentData.realm == undefined) ? await tools.getRealm() : this.componentData.realm;
       this.componentData.realm = realm;
       
-      // 获取资源ID（修复：添加空值检查）
-      let hrefMatch = location.href.match(/\/([^\/]+)$/);
+      // 获取资源ID - 使用更健壮的URL解析方式
+      let hrefMatch = location.href.match(/warehouse\/(.*)/);
       if (!hrefMatch || !hrefMatch[1]) {
-        tools.log("无法从URL提取资源名称");
+        tools.log("warehouseACCmpOffest: ❌ 无法从URL提取资源名称");
+        this.componentData.onLoad = false;
+        tools.log("========================================");
         return;
       }
       let res_name = decodeURI(hrefMatch[1]);
-      let res_id = tools.itemName2Index(res_name);
       
-      // 获取品质信息（修复：添加空值检查）
+      // 移除可能的 /sell/ 后缀
+      if (res_name.endsWith('/sell/') || res_name.endsWith('/sell')) {
+        res_name = res_name.replace(/\/sell\/?$/, '');
+      } else if (res_name.includes('/')) {
+        // 处理其他路径格式
+        res_name = res_name.split('/')[0];
+      }
+      tools.log(`warehouseACCmpOffest: 资源名称: ${res_name}`);
+      
+      let res_id = tools.itemName2Index(res_name);
+      if (res_id === undefined) {
+        tools.log(`warehouseACCmpOffest: ❌ 无法找到资源ID: ${res_name}`);
+        this.componentData.onLoad = false;
+        tools.log("========================================");
+        return;
+      }
+      tools.log(`warehouseACCmpOffest: 资源ID: ${res_id}`);
+      
+      // 获取品质信息
       let formNode = document.querySelector("form");
       if (!formNode) {
-        tools.log("未找到表单元素");
+        tools.log("warehouseACCmpOffest: ❌ 未找到表单元素");
+        this.componentData.onLoad = false;
+        tools.log("========================================");
         return;
       }
       let quality = this.getQuality(formNode);
+      tools.log(`warehouseACCmpOffest: 品质: ${quality}`);
+      
       let market_price = await tools.getMarketPrice(res_id, quality, realm);
+      tools.log(`warehouseACCmpOffest: 市场价格: ${market_price}`);
 
       // 从仓库数据中获取数量和成本
       let warehouseData = await this.getWarehouseItemData(res_id, quality, realm);
       let amount = warehouseData.amount || 0;
       let cost = warehouseData.cost || 0;
+      tools.log(`warehouseACCmpOffest: 数量: ${amount}, 成本: ${cost}`);
 
-      // 重新渲染select内部的数值
+      // 保存关键数据
+      this.componentData.amount = amount;
+      this.componentData.cost = cost;
+      this.componentData.marketPrice = market_price;
+
+      // 重新渲染按钮
       selectorNode.setAttribute("mp", market_price);
       selectorNode.setAttribute("amount", amount);
       selectorNode.setAttribute("cost", cost);
-      selectorNode.selectedIndex = 0;
-      let optionList = Object.values(selectorNode.querySelectorAll("option"));
-      for (let i = 0; i < optionList.length; i++) {
-        let optionNode = optionList[i];
-        let oriContent = this.indexDBData.offestList[realm][Number(optionNode.value)];
+      
+      // 生成按钮
+      for (let i = 0; i < this.indexDBData.offestList[realm].length; i++) {
+        let oriContent = this.indexDBData.offestList[realm][i];
         let realPrice = this.realPriceCalc(oriContent, market_price);
-        optionNode.innerHTML = `${oriContent}： ${realPrice}`;
+        let button = document.createElement("button");
+        button.setAttribute("sct_cpt", "warehouseACCmpOffest");
+        button.setAttribute("data-index", i);
+        button.setAttribute("data-value", realPrice);
+        button.setAttribute("type", "button");
+        button.textContent = `${oriContent}：${realPrice}`;
+        button.addEventListener("click", e => this.buttonClickHandle(e));
+        selectorNode.appendChild(button);
       }
+      
       // 挂载节点
       targetNode.appendChild(selectorNode);
       tools.log("warehouseACCmpOffest: ✅ 选择器已挂载");
@@ -160,6 +207,9 @@ class warehouseACCmpOffest extends BaseComponent {
       // 挂载数量和成本显示
       this.mountAmountCostDisplay(targetNode, amount, cost, market_price, res_name);
       tools.log("warehouseACCmpOffest: ✅ 数量成本显示已挂载");
+      
+      // 添加价格输入框监听
+      priceInput.addEventListener("input", e => this.handlePriceChange(e));
       
     } catch (error) {
       tools.log("warehouseACCmpOffest: ❌ 发生错误");
@@ -235,7 +285,7 @@ class warehouseACCmpOffest extends BaseComponent {
       
       return {
         amount: item.amount || 0,
-        cost: Math.floor(totalCost * 100) / 100
+        cost: Math.round(totalCost * 100) / 100
       };
     } catch (error) {
       tools.errorLog("获取仓库数据失败:", error);
@@ -245,41 +295,87 @@ class warehouseACCmpOffest extends BaseComponent {
   
   // 挂载数量和成本显示
   mountAmountCostDisplay(parentNode, amount, cost, marketPrice, itemName) {
-    // 移除已存在的显示节点
-    let existingDisplay = document.querySelector("div[sct_cpt='warehouseACCmpOffest'][sct_id='infoDisplay']");
-    if (existingDisplay) {
-      existingDisplay.remove();
+    try {
+      // 移除已存在的显示节点
+      let existingDisplay = document.querySelector("div[sct_cpt='warehouseACCmpOffest'][sct_id='infoDisplay']");
+      if (existingDisplay) {
+        existingDisplay.remove();
+      }
+      
+      if (!parentNode) {
+        tools.log("warehouseACCmpOffest: ❌ 无法挂载显示节点，父节点不存在");
+        return;
+      }
+      
+      // 创建显示节点
+      let infoDiv = document.createElement("div");
+      infoDiv.setAttribute("sct_cpt", "warehouseACCmpOffest");
+      infoDiv.setAttribute("sct_id", "infoDisplay");
+      infoDiv.style.cssText = `
+        margin-top: 8px;
+        padding: 6px;
+        background-color: rgba(60, 60, 60, 0.8);
+        border-radius: 4px;
+        font-size: 12px;
+        color: var(--fontColor);
+      `;
+      
+      // 保存节点引用
+      this.componentData.infoDisplay = infoDiv;
+      
+      // 初始渲染 - 使用当前市场价格
+      this.updateInfoDisplay(marketPrice);
+      
+      parentNode.appendChild(infoDiv);
+      tools.log("warehouseACCmpOffest: ✅ 信息显示节点已挂载");
+    } catch (error) {
+      tools.log("warehouseACCmpOffest: ❌ 挂载信息显示节点时出错");
+      tools.errorLog(error);
     }
-    
-    // 创建显示节点
-    let infoDiv = document.createElement("div");
-    infoDiv.setAttribute("sct_cpt", "warehouseACCmpOffest");
-    infoDiv.setAttribute("sct_id", "infoDisplay");
-    infoDiv.style.cssText = `
-      margin-top: 8px;
-      padding: 6px;
-      background-color: rgba(60, 60, 60, 0.8);
-      border-radius: 4px;
-      font-size: 12px;
-      color: var(--fontColor);
-    `;
-    
-    // 计算预估收益
-    let estimatedRevenue = Math.floor(amount * marketPrice * 100) / 100;
-    let estimatedProfit = Math.floor((estimatedRevenue - cost) * 100) / 100;
-    
-    infoDiv.innerHTML = `
-      <div style="display: flex; justify-content: space-between; gap: 10px;">
-        <span title="库存数量">📦 ${amount.toLocaleString()}</span>
-        <span title="平均成本">💰 ${cost.toLocaleString()}</span>
-        <span title="预估收入">📈 ${estimatedRevenue.toLocaleString()}</span>
-        <span title="预估利润" style="color: ${estimatedProfit >= 0 ? '#4CAF50' : '#f44336'}">
-          ${estimatedProfit >= 0 ? '+' : ''}${estimatedProfit.toLocaleString()}
-        </span>
-      </div>
-    `;
-    
-    parentNode.appendChild(infoDiv);
+  }
+
+  // 更新信息显示
+  updateInfoDisplay(currentPrice) {
+    try {
+      const { amount, cost, infoDisplay } = this.componentData;
+      
+      if (!infoDisplay) {
+        tools.log("warehouseACCmpOffest: 信息显示节点不存在，无法更新");
+        return;
+      }
+      
+      // 计算预估收益 - 四舍五入
+      let estimatedRevenue = Math.round(amount * currentPrice * 100) / 100;
+      let estimatedProfit = Math.round((estimatedRevenue - cost) * 100) / 100;
+      let roundedCost = Math.round(cost * 100) / 100;
+      
+      infoDisplay.innerHTML = `
+        <div style="display: flex; justify-content: space-between; gap: 10px;">
+          <span title="库存数量">📦 ${amount.toLocaleString()}</span>
+          <span title="平均成本">💰 ${roundedCost.toLocaleString()}</span>
+          <span title="预估收入（不含税）">📈 ${estimatedRevenue.toLocaleString()}</span>
+          <span title="预估利润（不含税）" style="color: ${estimatedProfit >= 0 ? '#4CAF50' : '#f44336'}">利润（不含税）
+           ${estimatedProfit >= 0 ? '+' : ''}${estimatedProfit.toLocaleString()}
+          </span>
+        </div>
+      `;
+    } catch (error) {
+      tools.log("warehouseACCmpOffest: ❌ 更新信息显示时出错");
+      tools.errorLog(error);
+    }
+  }
+
+  // 处理价格输入框变化
+  handlePriceChange(e) {
+    try {
+      const price = parseFloat(e.target.value);
+      if (!isNaN(price) && price > 0) {
+        this.updateInfoDisplay(price);
+      }
+    } catch (error) {
+      tools.log("warehouseACCmpOffest: ❌ 处理价格变化时出错");
+      tools.errorLog(error);
+    }
   }
   
   // 获取品质信息
@@ -306,36 +402,75 @@ class warehouseACCmpOffest extends BaseComponent {
   async buildSelectorNode() {
     let realm = (this.componentData.realm == undefined) ? await tools.getRealm() : this.componentData.realm;
     this.componentData.realm = realm;
-    let newNode = document.createElement("select");
-    let htmlText = this.indexDBData.offestList[realm].map((value, index) => `<option value='${index}'>${value}</option>`).join("");
-    newNode.innerHTML = htmlText;
-    newNode.addEventListener("change", e => this.selectorChange(e));
+    let newNode = document.createElement("div");
     newNode.setAttribute("sct_cpt", "warehouseACCmpOffest");
     newNode.setAttribute("sct_id", "selectorNode");
     this.componentData.selectorNode = newNode;
   }
-  // 选择器被点击
-  selectorChange(e) {
+  // 按钮点击处理
+  buttonClickHandle(e) {
     try {
-      let realm = this.componentData.realm;
-      let index = e.target.selectedIndex;
-      let market_price = Number(e.target.getAttribute("mp"));
-      let realPrice = this.realPriceCalc(this.indexDBData.offestList[realm][index], market_price);
-      let targetNode = e.target.previousElementSibling;
-      tools.log(`index:${index} value:${this.indexDBData.offestList[realm][index]} output:${realPrice}`);
-      tools.setInput(targetNode, realPrice, 3);
+      e.preventDefault();
+      e.stopPropagation();
+      
+      let target = e.target;
+      let value = target.getAttribute("data-value");
+      tools.log(`warehouseACCmpOffest: 按钮点击 - 值: ${value}`);
+      
+      // 使用保存的输入框引用
+      const targetInput = this.componentData.priceInput;
+      
+      if (targetInput) {
+        // 根据价格范围进行四舍五入
+        const roundedValue = this.roundPrice(parseFloat(value));
+        tools.setInput(targetInput, roundedValue, 3);
+        tools.log(`warehouseACCmpOffest: 已设置价格: ${roundedValue}`);
+        
+        // 同时更新信息显示
+        if (!isNaN(roundedValue) && roundedValue > 0) {
+          this.updateInfoDisplay(roundedValue);
+        }
+      }
     } catch (e) {
       tools.errorLog("仓库出售界面显示mp偏移组件报错", e);
     }
   }
+
+  // 根据价格范围进行四舍五入
+  roundPrice(price) {
+    if (isNaN(price) || price <= 0) return 0;
+    
+    let step;
+    if (price < 1) {
+      step = 0.001;
+    } else if (price >= 1 && price < 2) {
+      step = 0.01;
+    } else if (price >= 2 && price < 5) {
+      step = 0.05;
+    } else if (price >= 5 && price < 20) {
+      step = 0.1;
+    } else if (price >= 20 && price < 50) {
+      step = 0.25;
+    } else if (price >= 50 && price < 100) {
+      step = 0.5;
+    } else if (price >= 100 && price < 200) {
+      step = 1;
+    } else if (price >= 200 && price < 500) {
+      step = 2;
+    } else if (price >= 500 && price < 1000) {
+      step = 5;
+    } else {
+      step = 10;
+    }
+    
+    return Math.round(price / step) * step;
+  }
   // 计算实际价格
   realPriceCalc(inputString, marketPrice) {
-    // inputString = inputString.replace("mp", marketPrice);
     let [placeholder, operator, value] = inputString.split(/([+\-*/#])/);
     let mp = (placeholder == "") ? 0 : parseFloat(placeholder.replace("mp", marketPrice).trim());
     let num = parseFloat(value.trim());
     let result = 0;
-    // console.log(placeholder, operator, value);
     if (isNaN(num)) return 0;
     switch (operator) {
       case '+':
@@ -357,7 +492,7 @@ class warehouseACCmpOffest extends BaseComponent {
         result = 0;
         return;
     }
-    return Number(result.toFixed(3));
+    return Math.round(Number(result) * 1000) / 1000;
   }
 
 }
