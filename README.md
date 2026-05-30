@@ -1,5 +1,5 @@
 # Sim Companies Little Tools
- - 原脚本 
+ - 原脚本 https://github.com/AS629/SimComp-Tools
  - 更新api接口
 
 # 使用方法 [选其一即可]
