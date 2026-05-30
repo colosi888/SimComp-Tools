@@ -56,9 +56,17 @@ class retailDisplayProfit extends BaseComponent {
   async mainFunc() {
     // 初始化
     let activeNode = document.activeElement;
+    // 添加安全检查
+    if (!activeNode) return;
     let activeNodeRect = activeNode.getBoundingClientRect();
-    let targetNode = tools.getParentByIndex(activeNode, 5).previousElementSibling.querySelector("div > div > h3").parentElement;
-    let quantity = tools.getParentByIndex(activeNode, 2).previousElementSibling.querySelector("div > p > input[name='quantity']").value;
+    // 添加安全检查：确保 getParentByIndex 返回有效节点
+    let parentNode5 = tools.getParentByIndex(activeNode, 5);
+    let parentNode2 = tools.getParentByIndex(activeNode, 2);
+    if (!parentNode5 || !parentNode2) return;
+    let targetNode = parentNode5.previousElementSibling?.querySelector("div > div > h3")?.parentElement;
+    let quantity = parentNode2.previousElementSibling?.querySelector("div > p > input[name='quantity']")?.value;
+    // 添加安全检查
+    if (!targetNode || quantity === undefined) return;
     let price = activeNode.value;
     let baseInfo;
     try { baseInfo = this.getInfo(targetNode) } catch (error) { return }
@@ -228,8 +236,10 @@ class retailDisplayProfit extends BaseComponent {
     try {
       // 锁定填写框
       this.componentData.lastActiveInputNode.disabled = true;
-      // 前置行为
-      let { targetNode, quantity, basePrice, maxPrice, step } = this.preAction();
+      // 前置行为 - 添加安全检查
+      let preResult = this.preAction();
+      if (!preResult) return;
+      let { targetNode, quantity, basePrice, maxPrice, step } = preResult;
       // 使用临时步长信息覆写
       if (this.componentData.tempStepConfig.step != 0) {
         let avgPrice = parseFloat(tools.getParentByIndex(this.componentData.lastActiveInputNode, 5).previousElementSibling.innerText.split(/\n/).filter(text => text.match("平均价格"))[0].replace(/平均价格： \$|,/g, ""))
@@ -265,8 +275,10 @@ class retailDisplayProfit extends BaseComponent {
     try {
       // 锁定填写框
       this.componentData.lastActiveInputNode.disabled = true;
-      // 前置行为
-      let { targetNode, quantity, basePrice, maxPrice, step } = this.preAction();
+      // 前置行为 - 添加安全检查
+      let preResult = this.preAction();
+      if (!preResult) return;
+      let { targetNode, quantity, basePrice, maxPrice, step } = preResult;
       // 使用临时步长信息覆写
       if (this.componentData.tempStepConfig.step != 0) {
         let avgPrice = parseFloat(tools.getParentByIndex(this.componentData.lastActiveInputNode, 5).previousElementSibling.innerText.split(/\n/).filter(text => text.match("平均价格"))[0].replace(/平均价格： \$|,/g, ""))
@@ -300,8 +312,10 @@ class retailDisplayProfit extends BaseComponent {
     try {
       // 锁定填写框
       this.componentData.lastActiveInputNode.disabled = true;
-      // 前置行为
-      let { targetNode, quantity, basePrice, maxPrice, step } = this.preAction();
+      // 前置行为 - 添加安全检查
+      let preResult = this.preAction();
+      if (!preResult) return;
+      let { targetNode, quantity, basePrice, maxPrice, step } = preResult;
       // 使用临时步长信息覆写
       if (this.componentData.tempStepConfig.step != 0) {
         let avgPrice = parseFloat(tools.getParentByIndex(this.componentData.lastActiveInputNode, 5).previousElementSibling.innerText.split(/\n/).filter(text => text.match("平均价格"))[0].replace(/平均价格： \$|,/g, ""))
@@ -374,10 +388,31 @@ class retailDisplayProfit extends BaseComponent {
   preAction() {
     // 获取平均价格
     tools.setInput(this.componentData.lastActiveInputNode, 0);
-    let avgPrice = parseFloat(tools.getParentByIndex(this.componentData.lastActiveInputNode, 5).previousElementSibling.innerText.split(/\n/).filter(text => text.match("平均价格"))[0].replace(/平均价格： \$|,/g, ""))
+    // 添加安全检查
+    let parentNode5 = tools.getParentByIndex(this.componentData.lastActiveInputNode, 5);
+    let parentNode2 = tools.getParentByIndex(this.componentData.lastActiveInputNode, 2);
+    if (!parentNode5 || !parentNode2) {
+      tools.log("preAction: 父节点不存在");
+      return null;
+    }
+    let prevSibling = parentNode5.previousElementSibling;
+    if (!prevSibling) {
+      tools.log("preAction: previousElementSibling不存在");
+      return null;
+    }
+    let avgPriceText = prevSibling.innerText.split(/\n/).filter(text => text.match("平均价格"))[0];
+    if (!avgPriceText) {
+      tools.log("preAction: 未找到平均价格");
+      return null;
+    }
+    let avgPrice = parseFloat(avgPriceText.replace(/平均价格： \$|,/g, ""));
     // 获取数据
-    let targetNode = tools.getParentByIndex(this.componentData.lastActiveInputNode, 5).previousElementSibling.querySelector("div > div > h3").parentElement;
-    let quantity = tools.getParentByIndex(this.componentData.lastActiveInputNode, 2).previousElementSibling.querySelector("div > p > input[name='quantity']").value;
+    let targetNode = prevSibling.querySelector("div > div > h3")?.parentElement;
+    let quantity = parentNode2.previousElementSibling?.querySelector("div > p > input[name='quantity']")?.value;
+    if (!targetNode || quantity === undefined) {
+      tools.log("preAction: 目标节点或数量不存在");
+      return null;
+    }
     let basePrice = parseFloat(avgPrice) * this.indexDBData.minRate;
     let maxPrice = parseFloat(avgPrice) * this.indexDBData.maxRate;
     let step = this.getStep(basePrice);
