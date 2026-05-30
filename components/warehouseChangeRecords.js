@@ -172,8 +172,18 @@ class warehouseChangeRecords extends BaseComponent {
       }
       // 检测是否已有
       if (document.querySelector("div#script_warehouseChange_wMain")) return;
-      // 挂载 
-      let targetNode = tools.getParentByIndex(document.querySelector("div.col-lg-10.col-md-9 button"), 2);
+      // 挂载 - 添加安全检查
+      let itemNodeList = document.querySelectorAll(".col-lg-10.col-md-9 > div > div > div > div > div");
+      if (!itemNodeList || itemNodeList.length == 0) {
+        tools.log("仓库变动统计：未找到挂载节点，稍后重试");
+        await tools.dely(1000);
+        return this.mountPanel();
+      }
+      let targetNode = tools.getParentByIndex(itemNodeList[0], 5);
+      if (!targetNode) {
+        tools.log("仓库变动统计：父节点不存在");
+        return;
+      }
       targetNode.appendChild(this.componentData.warehouseMountMain);
     } catch (e) {
       tools.errorLog(e);
