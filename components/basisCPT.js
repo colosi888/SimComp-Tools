@@ -28,6 +28,10 @@ class basisCPT extends BaseComponent {
       { in: undefined, out: [] },
       { in: undefined, out: [] }
     ],
+    retailInfo: [[], []], // 饱和度数据
+    executiveBonus: [[], []], // 高管加成缓存
+    academyLevel: [[], []], // 学院等级
+    weather: [[], []], // 天气数据
     SCT_divHorizontal: false, // SCT 悬浮窗横向排列
     SCT_divFixedDisplay: false, // SCT 悬浮窗固定显示
     mapMarginTop: 0, // 地图上边界
@@ -69,18 +73,33 @@ class basisCPT extends BaseComponent {
     }, { // 建筑数据拦截
       urlMatch: url => /me\/buildings\/$/.test(url),
       func: this.buildingInfo
-    }, { // 仓库数据拦截
+    }, { // 仓库数据拦截 (v2)
       urlMatch: url => /v2\/resources\/$/.test(url),
       func: this.warehouseInfo
+    }, { // 仓库数据拦截 (v3)
+      urlMatch: url => /v3\/resources\/\d+\/$/.test(url),
+      func: this.warehouseInfoV3
     }, { // 交易所请求拦截
       urlMatch: url => /market\/(all\/)?\d+\/\d+\//.test(url),
       func: this.marketData
-    }, { // 高管拦截
+    }, { // 高管拦截 (v2)
       urlMatch: url => /me\/executives\/$/.test(url),
       func: this.netExecutives
+    }, { // 高管拦截 (v3)
+      urlMatch: url => /v3\/companies\/me\/executives\/$/.test(url),
+      func: this.netExecutivesV3
     }, { // 备注拦截
       urlMatch: url => /me\/note\/$/.test(url) || /me\/my-note\/$/.test(url) || /me\/note\/(\d+)\/$/.test(url),
       func: this.netNoteRegist
+    }, { // 认证数据拦截
+      urlMatch: url => /v3\/companies\/auth-data\/$/.test(url),
+      func: this.authDataHandler
+    }, { // 零售信息拦截 (v4)
+      urlMatch: url => /v4\/\d+\/resources-retail-info\/$/.test(url),
+      func: this.retailInfoHandler
+    }, { // 天气信息拦截
+      urlMatch: url => /v2\/weather\/\d+\/$/.test(url),
+      func: this.weatherHandler
     }
   ]
   settingUI = this.uisetting;
@@ -184,6 +203,97 @@ class basisCPT extends BaseComponent {
       tools.errorLog(e);
     }
   }
+  // 仓库信息拦截处理 (v3)
+  warehouseInfoV3(url, method, resp) {
+    resp = JSON.parse(resp);
+    if (this.componentData.realm == undefined) return;
+    tools.log("仓库数据 V3: ", resp);
+    this.indexDBData.warehouse[this.componentData.realm] = resp;
+    tools.indexDB_updateIndexDBData();
+  }
+  // 高管信息网络请求拦截函数 (v3)
+  async netExecutivesV3(url, method, resp) {
+    let data = JSON.parse(resp);
+    let realm = await tools.getRealm();
+    this.indexDBData.executives[realm] = data.executives || data;
+    this.calculateExecutiveBonus(data.executives || data, realm);
+  }
+  // 认证数据拦截处理
+  authDataHandler(url, method, resp) {
+    resp = JSON.parse(resp);
+    if (resp.authCompany) {
+      this.indexDBData.userInfo[resp.authCompany.realmId] = resp;
+      this.componentData.realm = resp.authCompany.realmId;
+      tools.log("认证数据获取完毕：", resp);
+      tools.indexDB_updateIndexDBData();
+    }
+  }
+  // 零售信息拦截处理
+  retailInfoHandler(url, method, resp) {
+    resp = JSON.parse(resp);
+    const realm = parseInt(url.match(/v4\/(\d+)\/resources-retail-info/)[1]);
+    const retailInfo = resp.map(item => ({
+      quality: item.quality,
+      dbLetter: item.dbLetter,
+      averagePrice: item.averagePrice,
+      saturation: item.saturation
+    }));
+    this.indexDBData.retailInfo[realm] = retailInfo;
+    tools.log("零售信息数据获取完毕：", retailInfo);
+    tools.indexDB_updateIndexDBData();
+  }
+  // 天气信息拦截处理
+  weatherHandler(url, method, resp) {
+    resp = JSON.parse(resp);
+    const realm = parseInt(url.match(/v2\/weather\/(\d+)/)[1]);
+    this.indexDBData.weather[realm] = {
+      until: resp.until,
+      sellingSpeedMultiplier: resp.sellingSpeedMultiplier
+    };
+    tools.log("天气数据获取完毕：", this.indexDBData.weather[realm]);
+    tools.indexDB_updateIndexDBData();
+  }
+  // 计算高管加成
+  calculateExecutiveBonus(executives, realm) {
+    const skills = executives.reduce((acc, exec) => {
+      if (exec.currentWorkHistory) {
+        acc[exec.currentWorkHistory.position] = exec.skills;
+      }
+      return acc;
+    }, {});
+
+    const safeSkill = (position, skillName) => skills[position]?.[skillName] || 0;
+    let academyActive = this.indexDBData.academyLevel[realm] || 15;
+
+    let COO_Apprentice = 0, CMO_Apprentice = 0;
+    if (academyActive >= 15) {
+      COO_Apprentice = safeSkill('v', 'coo') / 2;
+      CMO_Apprentice = safeSkill('y', 'cmo') / 2;
+    } else if (academyActive >= 5) {
+      COO_Apprentice = safeSkill('v', 'coo') / 2;
+    }
+
+    let adminBonus = Math.floor(
+      safeSkill('o', 'coo') +
+      COO_Apprentice +
+      (safeSkill('f', 'coo') + safeSkill('m', 'coo') + safeSkill('t', 'coo')) / 4
+    );
+    if (adminBonus > 80) adminBonus = 80 + Math.floor((adminBonus - 80) / 2);
+    if (adminBonus > 60) adminBonus = 60 + Math.floor((adminBonus - 60) / 2);
+
+    let saleBonusRaw = Math.floor(
+      safeSkill('m', 'cmo') +
+      CMO_Apprentice +
+      (safeSkill('o', 'cmo') + safeSkill('f', 'cmo') + safeSkill('t', 'cmo')) / 4
+    );
+    if (saleBonusRaw > 80) saleBonusRaw = 80 + Math.floor((saleBonusRaw - 80) / 2);
+    if (saleBonusRaw > 60) saleBonusRaw = 60 + Math.floor((saleBonusRaw - 60) / 2);
+    let saleBonus = Math.floor(saleBonusRaw / 3);
+
+    this.indexDBData.executiveBonus[realm] = { adminBonus, saleBonus, timestamp: Date.now() };
+    tools.log("高管加成计算完毕：", this.indexDBData.executiveBonus[realm]);
+    tools.indexDB_updateIndexDBData();
+  }
   // 自启动挂载css
   startUpMountCSS() {
     // :root{--fontColor:##FONTCOLOR##}
@@ -198,11 +308,17 @@ class basisCPT extends BaseComponent {
     if (!netData) return;
     this.indexDBData.userInfo[netData.authCompany.realmId] = netData;
     this.componentData.realm = netData.authCompany.realmId;
+    // 保存 companyId 供后续使用
+    this.componentData.companyId = netData.authCompany.companyId;
     tools.log("用户数据获取完毕：", netData);
   }
   // 自启动仓库信息检索
   async startupWarehouseInfo() {
-    let netData = await tools.getNetData(tools.baseURL.warehouse);
+    // 等待 companyId 可用
+    while (!this.componentData.companyId) {
+      await tools.dely(500);
+    }
+    let netData = await tools.getNetData(`${tools.baseURL.warehouse}${this.componentData.companyId}/`);
     if (!netData || this.componentData.realm == undefined) return;
     this.indexDBData.warehouse[this.componentData.realm] = netData;
     tools.log("仓库数据更新完毕：", netData);
@@ -531,10 +647,83 @@ class basisCPT extends BaseComponent {
   }
   // 主动获取语言包文件
   async startupForLang() {
-    let originName = new URL(document.querySelector("script[type='module']").src).origin;
-    let langData = await tools.getNetData(originName + "\/static\/js\/lang6\/zh.json?" + await tools.generateUUID());
-    if (!langData) return;
-    tools.indexDB_updateLangData(langData);
+    try {
+      let originName = new URL(document.querySelector("script[type='module']").src).origin;
+      
+      // 方法1：尝试从页面中提取语言包URL（支持带哈希的文件名）
+      let langData = await this.tryExtractLangFromPage(originName);
+      if (langData) {
+        tools.indexDB_updateLangData(langData);
+        tools.log("语言包加载成功（从页面提取）");
+        return;
+      }
+      
+      // 方法2：尝试多个可能的语言包路径
+      const langPaths = [
+        `${originName}/static/js/lang6/zh-cn.json`,
+        `${originName}/static/js/lang6/zh.json`,
+        `${originName}/static/js/lang/zh-cn.json`,
+        `${originName}/static/js/lang/zh.json`
+      ];
+      
+      for (const path of langPaths) {
+        try {
+          langData = await tools.getNetData(`${path}?${await tools.generateUUID()}`);
+          if (langData) {
+            tools.indexDB_updateLangData(langData);
+            tools.log(`语言包加载成功（路径: ${path}）`);
+            return;
+          }
+        } catch (error) {
+          tools.log(`尝试加载语言包失败: ${path}`);
+        }
+      }
+      
+      tools.log("未能加载语言包，将使用资源ID映射表作为备用");
+    } catch (error) {
+      tools.errorLog("语言包加载异常:", error);
+    }
+  }
+  
+  // 从页面中提取语言包URL
+  async tryExtractLangFromPage(originName) {
+    try {
+      // 查找包含 lang6 的 script 标签
+      const scriptTags = document.querySelectorAll('script[src*="lang6"]');
+      for (const script of scriptTags) {
+        const src = script.getAttribute('src');
+        if (src.includes('zh') || src.includes('zh-cn')) {
+          const langUrl = src.startsWith('/') ? originName + src : src;
+          try {
+            return await tools.getNetData(langUrl);
+          } catch (error) {
+            tools.log(`尝试提取的语言包URL失败: ${langUrl}`);
+          }
+        }
+      }
+      
+      // 如果没有找到，尝试通用的带哈希格式
+      const commonHashes = ['d639dbe88705', 'common'];
+      for (const hash of commonHashes) {
+        const paths = [
+          `${originName}/static/js/lang6/zh-cn.${hash}.json`,
+          `${originName}/static/js/lang6/zh.${hash}.json`
+        ];
+        for (const path of paths) {
+          try {
+            const data = await tools.getNetData(path);
+            if (data) return data;
+          } catch (error) {
+            tools.log(`尝试哈希路径失败: ${path}`);
+          }
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      tools.errorLog("提取语言包URL失败:", error);
+      return null;
+    }
   }
   // 主动获取高管信息
   async startupExecutives() {
