@@ -70,6 +70,10 @@ class newTabProfile extends BaseComponent {
   }
   nodeTagCheck(node, index = 0) {
     let realm = runtimeData.basisCPT.realm;
+    // 添加安全检查：确保 userInfo 数据存在
+    if (!indexDBData.basisCPT?.userInfo?.[realm]?.authCompany?.company) {
+      return [false, ""];
+    }
     let myName = indexDBData.basisCPT.userInfo[realm].authCompany.company;
     if (index >= 3) return [false, ""];
     let reg = /\/.+\/company\/\d+\/.+\//;
