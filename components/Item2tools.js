@@ -74,7 +74,7 @@ class item2tools extends BaseComponent {
     let quality = 0;
     if (/Q\d+/i.test(target.querySelector("span>b").innerText))
       quality = target.querySelector("span>b").innerText.match(/q(\d+)/i)[1];
-    window.open(`https://simcotools.app/zh/exchange/${realm}/${resID}?quality=${quality}`);
+    window.open(`https://simcotools.com/zh/market/${realm}/${resID}?quality=${quality}`);
   }
   // 交易所处理函数
   marketClickHandle(event) {
@@ -83,7 +83,7 @@ class item2tools extends BaseComponent {
     let quality = 0;
     if (document.body.querySelector("form").querySelector("button>span"))
       quality = Math.floor(document.body.querySelector("form").querySelector("button>span").innerText);
-    window.open(`https://simcotools.app/zh/exchange/${realm}/${resID}?quality=${quality}`);
+    window.open(`https://simcotools.com/zh/market/${realm}/${resID}?quality=${quality}`);
   }
 
 
