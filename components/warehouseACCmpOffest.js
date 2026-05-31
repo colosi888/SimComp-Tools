@@ -6,18 +6,18 @@ class warehouseACCmpOffest extends BaseComponent {
   constructor() {
     super();
     this.name = "仓库出售界面显示mp偏移";
-    this.describe = "在仓库出售表格中,填写单价的下面会自动根据当前市场最低价以及设置的计算方法来显示";
+    this.describe = "在仓库出售表格中,填写单价的下面会自动根据当前市场最低价以及设置的计算方法来显示。支持mp(市场价格)和step(价格tick值)作为占位符，可自动按价格区间四舍五入";
     this.enable = true;
   }
   indexDBData = {
-    offestList: [["mp+0", "mp*0.97"], ["mp+0", "mp*0.97"]], // 不同分区的偏移列表 内容是字符串 使用mp作为占位符
+    offestList: [["mp+0", "mp*0.97","mp+step","mp-step"], ["mp+0", "mp*0.97","mp+step","mp-step"]], // 不同分区的偏移列表 内容是字符串 使用mp作为占位符
   }
   componentData = {
     onLoad: false, // 正在加载标记
     realm: undefined, // 当前服务器标记
     selectorNode: undefined, // 选择器缓存节点
-    amount: 0, // 保存数量
-    cost: 0, // 保存成本
+    warehouseTotalAmount: 0, // 仓库中该物品的总数量
+    cost: 0, // 保存仓库总成本
     marketPrice: 0, // 保存市场价格
     priceInput: undefined, // 保存价格输入框引用
     infoDisplay: undefined, // 保存信息显示节点引用
@@ -37,7 +37,7 @@ class warehouseACCmpOffest extends BaseComponent {
     let newNode = document.createElement("div");
     let realm = (this.componentData.realm == undefined) ? await tools.getRealm() : this.componentData.realm;
     this.componentData.realm = realm;
-    let htmlText = `<div class="header">仓库出售界面显示mp偏移</div><div class="container"><div><button class="btn script_opt_submit">保存</button></div><table><thead><tr><td colspan="2"><span>使用mp作为占位符</span><br><span>允许使用单次 + - * / 运算符</span><br><span>或者使用#来代表归零0； 例如#100 = 100</span></td></tr><tr><td>偏移表达</td><td>设置</td></tr></thead><tbody>`;
+    let htmlText = `<div class="header">仓库出售界面显示mp偏移</div><div class="container"><div><button class="btn script_opt_submit">保存</button></div><table><thead><tr><td colspan="2"><span>使用mp或step作为占位符</span><br><span>mp = 市场价格</span><br><span>step = 根据价区格间自动确定的tick值</span><br><span>允许使用单次 + - * / 运算符</span><br><span>或者使用#来代表归零0； 例如#100 = 100</span></td></tr><tr><td>偏移表达</td><td>设置</td></tr></thead><tbody>`;
     for (let i = 0; i < this.indexDBData.offestList[realm].length; i++) {
       let offestString = this.indexDBData.offestList[realm][i];
       htmlText += `<tr><td><input class="form-control" value='${offestString}'></td><td><button class="btn form-control" sct_id="deleteOne">删除</button></td></tr>`;
@@ -189,10 +189,11 @@ class warehouseACCmpOffest extends BaseComponent {
       let market_price = await tools.getMarketPrice(res_id, quality, realm);
       tools.log(`warehouseACCmpOffest: 市场价格: ${market_price}`);
 
-      // 从仓库数据中获取成本
+      // 从仓库数据中获取成本和仓库总数
       let warehouseData = await this.getWarehouseItemData(res_id, quality, realm);
       let cost = warehouseData.cost || 0;
-      tools.log(`warehouseACCmpOffest: 成本: ${cost}`);
+      let warehouseTotalAmount = warehouseData.amount || 0;
+      tools.log(`warehouseACCmpOffest: 成本: ${cost}, 仓库总数: ${warehouseTotalAmount}`);
 
       // 获取数量输入框的初始值
       let inputList = formNode.querySelectorAll("input");
@@ -201,6 +202,7 @@ class warehouseACCmpOffest extends BaseComponent {
 
       // 保存关键数据
       this.componentData.cost = cost;
+      this.componentData.warehouseTotalAmount = warehouseTotalAmount;
       this.componentData.marketPrice = market_price;
 
       // 重新渲染按钮
@@ -411,16 +413,21 @@ class warehouseACCmpOffest extends BaseComponent {
         }
       }
       
+      // 获取仓库总数和总成本
+      const warehouseTotalAmount = this.componentData.warehouseTotalAmount || 1;
+      const totalCostValue = this.componentData.cost || 0;
+      
       // 获取运输单位成本
       const transUnitPrice = this.get_cost("运输单位", 0) || 0;
       const transPay = transUnitCount * transUnitPrice;
       
-      // 计算总收益和利润
+      // 计算总成本：总成本 = (仓库总成本 / 仓库总数) * 输入数量 + 运输费用 + 税费
       let estimatedRevenue = Math.round(amount * currentPrice * 100) / 100;
-      let totalCost = cost + transPay + taxFee; // 总成本 = 成本 + 运输费用 + 税费
+      let totalCost = (totalCostValue / warehouseTotalAmount) * amount + transPay + taxFee;
       let estimatedProfit = Math.round((estimatedRevenue - totalCost) * 100) / 100;
       let netRevenue = Math.round((estimatedRevenue - taxFee) * 100) / 100;
-      let roundedCost = Math.round(cost * 100) / 100;
+      // 显示的成本应该是卖出的这部分物品的成本
+      let costToShow = Math.round((totalCostValue / warehouseTotalAmount) * amount * 100) / 100;
       let roundedTransPay = Math.round(transPay * 100) / 100;
       
       infoDisplay.innerHTML = `
@@ -429,9 +436,9 @@ class warehouseACCmpOffest extends BaseComponent {
             <span style="font-size: 10px; opacity: 0.8;">数量</span>
             <span style="font-weight: 500;">${amount.toLocaleString()}</span>
           </div>
-          <div title="平均成本" style="display: flex; flex-direction: column; gap: 2px;">
+          <div title="这部分物品的成本" style="display: flex; flex-direction: column; gap: 2px;">
             <span style="font-size: 10px; opacity: 0.8;">成本</span>
-            <span style="font-weight: 500;">${roundedCost.toLocaleString()}</span>
+            <span style="font-weight: 500;">${costToShow.toLocaleString()}</span>
           </div>
           <div title="运输费用" style="display: flex; flex-direction: column; gap: 2px;">
             <span style="font-size: 10px; opacity: 0.8;">运费</span>
@@ -633,7 +640,14 @@ class warehouseACCmpOffest extends BaseComponent {
   }
   // 计算实际价格
   realPriceCalc(inputString, marketPrice) {
-    let [placeholder, operator, value] = inputString.split(/([+\-*/#])/);
+    // 先根据市场价格获取对应的 step 值
+    const step = this.getStepByPrice(marketPrice);
+    
+    // 替换 step 占位符
+    let processedString = inputString.replace(/step/g, step.toString());
+    
+    // 然后正常计算
+    let [placeholder, operator, value] = processedString.split(/([+\-*/#])/);
     let mp = (placeholder == "") ? 0 : parseFloat(placeholder.replace("mp", marketPrice).trim());
     let num = parseFloat(value.trim());
     let result = 0;
@@ -658,17 +672,43 @@ class warehouseACCmpOffest extends BaseComponent {
         result = 0;
         return;
     }
-    // 根据结果范围选择最合适的小数位数进行四舍五入
-    if (result < 1) {
-      return Number(result.toFixed(3));
-    } else if (result < 2) {
-      return Number(result.toFixed(2));
-    } else if (result < 5) {
-      return Number(result.toFixed(2));
-    } else if (result < 20) {
-      return Number(result.toFixed(1));
+    
+    // 最后使用 roundPrice 进行四舍五入
+    return this.roundPrice(result);
+  }
+
+  // 根据价格获取对应的 step 值
+  getStepByPrice(price) {
+    if (isNaN(price) || price <= 0) return 0.001;
+    
+    if (price >= 20000) {
+      return 500;
+    } else if (price >= 10000 && price < 20000) {
+      return 100;
+    } else if (price >= 5000 && price < 10000) {
+      return 25;
+    } else if (price >= 1000 && price < 5000) {
+      return 10;
+    } else if (price >= 500 && price < 1000) {
+      return 5;
+    } else if (price >= 200 && price < 500) {
+      return 2;
+    } else if (price >= 100 && price < 200) {
+      return 1;
+    } else if (price >= 50 && price < 100) {
+      return 0.5;
+    } else if (price >= 20 && price < 50) {
+      return 0.25;
+    } else if (price >= 5 && price < 20) {
+      return 0.1;
+    } else if (price >= 2 && price < 5) {
+      return 0.05;
+    } else if (price >= 1 && price < 2) {
+      return 0.01;
+    } else if (price >= 0.5 && price < 1) {
+      return 0.005;
     } else {
-      return Number(result.toFixed(2));
+      return 0.001;
     }
   }
 
